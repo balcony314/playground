@@ -1,0 +1,84 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    permissions:
+      contents: read
+    name: Run on Ubuntu (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Tidy modules
+        run: go mod tidy
+
+      - name: Verify go.mod is tidy
+        run: |
+          if ! git diff --exit-code go.mod go.sum; then
+            echo "::error::go.mod/go.sum is not tidy. Run 'go mod tidy' and commit the result."
+            exit 1
+          fi
+
+      - name: Install the latest version of kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin
+
+      - name: Verify kind installation
+        run: kind version
+
+      - name: Create kind cluster
+        run: kind create cluster --name operator-demo-integration
+
+      - name: Setup integration environment
+        run: |
+          CLUSTER=kind KIND_CLUSTER=operator-demo-integration \
+            bash test/integration/00-setup.sh
+
+      - name: Run all integration scenarios
+        run: bash test/integration/run-all.sh
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== operator logs ==="
+          kubectl logs -n operator-demo-system deploy/operator-demo-controller-manager --tail=100 || true
+          echo "=== events (default) ==="
+          kubectl get events -n default --sort-by=.lastTimestamp | tail -50 || true
+          echo "=== operator-demo-system pods ==="
+          kubectl get pods -n operator-demo-system -o wide || true
+
+      - name: Delete kind cluster
+        if: always()
+        run: kind delete cluster --name operator-demo-integration
