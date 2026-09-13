@@ -1,0 +1,134 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: '要 review 的 PR 编号（手动触发必填）'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      ANTHROPIC_BASE_URL: https://open.bigmodel.cn/api/anthropic
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.GLM_API_KEY }}
+      ANTHROPIC_MODEL: glm-5.2
+      GOLANGCI_LINT_VERSION: v2.12.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 安装 golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@"${GOLANGCI_LINT_VERSION:-v2.12.0}"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: 静态分析（go vet + golangci-lint）
+        continue-on-error: true
+        run: |
+          {
+            echo "### go vet"
+            go vet ./... 2>&1 || true
+            echo ""
+            echo "### golangci-lint"
+            golangci-lint run ./... 2>&1 || true
+          } | tee lint-report.txt
+          echo "静态分析完成（报告 $(wc -l < lint-report.txt) 行）"
+
+      - name: 获取 PR diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number || inputs.pr_number }}"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::error::无法确定 PR 编号（手动触发请提供 pr_number 输入）"
+            exit 1
+          fi
+          echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_ENV"
+          gh pr diff "$PR_NUMBER" > pr-diff.txt
+          echo "diff 获取完成（$(wc -l < pr-diff.txt) 行）"
+
+      - name: 组装 Prompt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat .github/ai-review/prompt-template.md > prompt.md
+          {
+            echo ""
+            echo "## 静态分析报告（go vet + golangci-lint）"
+            echo '````'
+            cat lint-report.txt
+            echo '````'
+          } >> prompt.md
+          DIFF_LINES=$(wc -l < pr-diff.txt)
+          if [ "$DIFF_LINES" -gt 3000 ]; then
+            {
+              echo ""
+              echo "## PR Diff（超过 3000 行，仅列文件统计，请用 Read 工具查阅重点文件）"
+              gh pr view "$PR_NUMBER" --json files \
+                --jq '.files[] | "- `\(.path)` +\(.additions) -\(.deletions)"'
+            } >> prompt.md
+          else
+            {
+              echo ""
+              echo "## PR Diff"
+              echo '````diff'
+              cat pr-diff.txt
+              echo '````'
+            } >> prompt.md
+          fi
+          echo "prompt.md 组装完成（$(wc -l < prompt.md) 行）"
+
+      - name: 安装 Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.269
+
+      - name: 调用 Claude Review
+        timeout-minutes: 10
+        run: |
+          set +e
+          timeout 570 claude -p "$(cat prompt.md)" \
+            --settings .github/ai-review/claude-config.json \
+            --output-format json > claude-result.json 2> claude-stderr.log
+          CLAUDE_EXIT=$?
+          set -e
+          if [ "$CLAUDE_EXIT" -ne 0 ] \
+             || ! jq -e '.result | length > 0' claude-result.json > /dev/null 2>&1 \
+             || [ "$(jq -r '.is_error // "false"' claude-result.json)" = "true" ]; then
+            {
+              echo "## ⚠️ AI Review 失败"
+              echo ""
+              echo "- claude 退出码：\`$CLAUDE_EXIT\`"
+              echo "- 错误信息：\`$(head -c 500 claude-stderr.log 2>/dev/null)\`"
+              echo "- 完整日志：[Actions Run #${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            } > comment.md
+          else
+            jq -r '.result' claude-result.json > comment.md
+            {
+              echo ""
+              echo "---"
+              echo "⚠️ 由 AI（${ANTHROPIC_MODEL}）自动生成，仅供参考 | [Actions Run #${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            } >> comment.md
+          fi
+
+      - name: 发布 PR 评论
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "$PR_NUMBER" --body-file comment.md

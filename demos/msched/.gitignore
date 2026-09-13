@@ -1,0 +1,10 @@
+/bin/
+/dist/
+*.test
+*.out
+.env
+.claude/
+
+# Go build artifacts（防 go build ./... 误落根目录的二进制）
+/scheduler
+/worker

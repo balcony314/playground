@@ -1,0 +1,293 @@
+# msched HTTP API 契约（OpenAPI 3.0.3）
+#
+# 本文件是 msched 任务管理 HTTP API 的唯一契约定义。实现为 internal/api 下手写 gin
+# handler（不使用代码生成），handler 行为需与本契约对齐。后续若漂移成痛点再引入
+# oapi-codegen 生成。
+#
+# 详见 docs/DESIGN.md §3（数据模型）/§8（状态机）。
+openapi: 3.0.3
+info:
+  title: msched API
+  version: 0.1.0
+  description: |
+    msched 任务管理 HTTP API。提供任务创建、列表与 group 进度查询。
+    msched 是无中心、Pull 模式分布式调度系统，任务创建即 PENDING 即可派发（无定时）。
+servers:
+  - url: /api/v1
+    description: 默认前缀
+paths:
+  /groups/{group_uid}/tasks:
+    post:
+      operationId: createTask
+      summary: 创建任务
+      description: |
+        创建任务。幂等：相同 group+args 产生相同 unit_id，重复创建返回已存在任务
+        （DESIGN §3）。创建即 PENDING 立即可撮合派发，无调度时间。
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/GroupUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: 创建成功（或已存在，幂等返回）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      operationId: listTasks
+      summary: 列出任务
+      description: |
+        按 group 列出任务。可选按状态过滤，按 priority, unit_id 升序分页。
+        list 不返回 args/result 等大字段。
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/GroupUID'
+        - name: state
+          in: query
+          description: 按状态过滤，可重复传多个。
+          required: false
+          schema:
+            $ref: '#/components/schemas/State'
+        - name: limit
+          in: query
+          description: 返回上限。
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 500
+        - name: offset
+          in: query
+          description: 分页偏移。
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: 任务列表。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      operationId: deleteTasks
+      summary: 删除任务
+      description: |
+        物理删除任务。两种模式互斥：
+        - `unit_ids` 非空：删指定 unitID（仅删属于该 group 的）。
+        - `all=true`：删整个 group 下全部任务，连同 group_stats 该 group 所有行。
+
+        物理删除绕过状态机（非置 DISCARDED 终态），适用管理/运维清理（SQL.md §4.2）。
+        删 SCHEDULED 任务后 Redis 派发队列可能有残留 member，worker 拉走时因行不存在
+        no-op（无害，靠现有防双发所有权校验兜底）。
+      tags: [tasks]
+      parameters:
+        - $ref: '#/components/parameters/GroupUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteTasksRequest'
+      responses:
+        '200':
+          description: 删除完成。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /groups/{group_uid}/progress:
+    get:
+      operationId: getGroupProgress
+      summary: 查看 group 进度
+      description: |
+        返回某 group 下各 (selector_hash, state) 的任务聚合计数（DESIGN §3 group_stats，
+        实时维护）。用于观测 group 的处理进度与各状态分布。
+      tags: [groups]
+      parameters:
+        - $ref: '#/components/parameters/GroupUID'
+      responses:
+        '200':
+          description: group 聚合进度。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupProgress'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    GroupUID:
+      name: group_uid
+      in: path
+      description: 租户隔离 ID（多租户公平作用域，DESIGN §9）。
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    BadRequest:
+      description: 请求参数错误。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: 服务器内部错误。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    State:
+      type: string
+      description: 任务状态机枚举（DESIGN §8.1）。
+      enum: [PENDING, BACKOFF, SCHEDULED, RUNNING, COMPLETED, DISCARDED]
+    CreateTaskRequest:
+      type: object
+      required: [args]
+      properties:
+        args:
+          type: string
+          format: byte
+          description: 任务参数，base64 编码。相同 group+args 产生相同 unit_id（幂等）。
+        worker_selector:
+          type: object
+          description: |
+            任务对 worker 的单向强约束（S_t ⊆ L_w，DESIGN §4）。维度开放，未声明的维度
+            即通配。空对象匹配所有 worker。
+          additionalProperties:
+            type: string
+          default: {}
+        max_exec_duration:
+          type: string
+          description: 执行时长上限（Go duration 字符串，如 "30s"、"5m"）。RUNNING 硬截止依据。
+          default: 0s
+          example: 30s
+        priority:
+          type: integer
+          format: int64
+          description: 撮合排序键。默认 = created_at 微秒（FIFO）；业务可调升。
+          minimum: 0
+    Task:
+      type: object
+      description: |
+        任务投影（list/create 返回）。不含 args/result 大字段。
+        unit_id = hash(group+args)，全系统上层唯一标识（DESIGN §3）。
+      properties:
+        unit_id:
+          type: string
+          description: 上层唯一标识（= hash(group+Args)，DESIGN §3）。
+        group_uid:
+          type: string
+        state:
+          $ref: '#/components/schemas/State'
+        priority:
+          type: integer
+          format: int64
+        worker_selector:
+          type: object
+          additionalProperties:
+            type: string
+        selector_hash:
+          type: string
+          description: group_stats 维度键（DESIGN §3）。
+        max_exec_duration:
+          type: string
+          description: 执行时长上限（Go duration 字符串）。
+        fail_count:
+          type: integer
+          description: 连续无匹配次数。
+        dispatch_count:
+          type: integer
+          description: 派发次数（超 TaskMaxAttempt 转 DISCARDED，DESIGN §8.5）。
+        next_retry_time:
+          type: string
+          format: date-time
+          nullable: true
+          description: BACKOFF 退避下次可撮合时间（PENDING 时为 null）。
+    TaskList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+    GroupProgress:
+      type: object
+      properties:
+        group_uid:
+          type: string
+        stats:
+          type: array
+          description: 各 (selector_hash, state) 聚合计数。
+          items:
+            $ref: '#/components/schemas/GroupStatRow'
+    GroupStatRow:
+      type: object
+      description: group_stats 单行（DESIGN §3）。
+      properties:
+        selector_hash:
+          type: string
+        selectors:
+          type: array
+          description: selector_hash 的可读伴随（"k=v" 按 key 排序），无需反查 hash。
+          items:
+            type: string
+        state:
+          $ref: '#/components/schemas/State'
+        count:
+          type: integer
+          format: int64
+    DeleteTasksRequest:
+      type: object
+      description: |
+        删除任务请求。两种模式互斥：unit_ids 非空删指定，all=true 删整个 group。
+        两者同时给或都不给均返回 400。
+      properties:
+        unit_ids:
+          type: array
+          description: 要删除的 unit_id 列表（仅删属于该 group 的，不存在的忽略）。
+          items:
+            type: string
+        all:
+          type: boolean
+          description: 为 true 时删整个 group 下全部任务。
+          default: false
+    DeleteResponse:
+      type: object
+      properties:
+        deleted:
+          type: integer
+          format: int64
+          description: 实际删除的行数。
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: 错误信息。
+        code:
+          type: string
+          description: 错误码（可选）。

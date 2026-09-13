@@ -1,0 +1,255 @@
+state 0 //
+
+    0 $accept: . top
+
+    '('     shift, and goto state 3
+    NUMBER  shift, and goto state 4
+
+    expression  goto state 2
+    top         goto state 1
+
+state 1 // NUMBER [$end]
+
+    0 $accept: top .  [$end]
+
+    $end  accept
+
+state 2 // NUMBER [$end]
+
+    1 top: expression .  [$end]
+    3 expression: expression . '+' expression  // assoc %left, prec 1
+    4 expression: expression . '-' expression  // assoc %left, prec 1
+    5 expression: expression . '*' expression  // assoc %left, prec 2
+    6 expression: expression . '/' expression  // assoc %left, prec 2
+    7 expression: expression . '%' expression  // assoc %left, prec 2
+    8 expression: expression . '^' expression  // assoc %left, prec 2
+
+    $end  reduce using rule 1 (top)
+    '%'   shift, and goto state 11
+    '*'   shift, and goto state 9
+    '+'   shift, and goto state 7
+    '-'   shift, and goto state 8
+    '/'   shift, and goto state 10
+    '^'   shift, and goto state 12
+
+state 3 // '('
+
+    2 expression: '(' . expression ')'
+
+    '('     shift, and goto state 3
+    NUMBER  shift, and goto state 4
+
+    expression  goto state 5
+
+state 4 // NUMBER
+
+    9 expression: NUMBER .  [$end, '%', ')', '*', '+', '-', '/', '^']
+
+    $end  reduce using rule 9 (expression)
+    '%'   reduce using rule 9 (expression)
+    ')'   reduce using rule 9 (expression)
+    '*'   reduce using rule 9 (expression)
+    '+'   reduce using rule 9 (expression)
+    '-'   reduce using rule 9 (expression)
+    '/'   reduce using rule 9 (expression)
+    '^'   reduce using rule 9 (expression)
+
+state 5 // '(' NUMBER ['%']
+
+    2 expression: '(' expression . ')'
+    3 expression: expression . '+' expression  // assoc %left, prec 1
+    4 expression: expression . '-' expression  // assoc %left, prec 1
+    5 expression: expression . '*' expression  // assoc %left, prec 2
+    6 expression: expression . '/' expression  // assoc %left, prec 2
+    7 expression: expression . '%' expression  // assoc %left, prec 2
+    8 expression: expression . '^' expression  // assoc %left, prec 2
+
+    '%'  shift, and goto state 11
+    ')'  shift, and goto state 6
+    '*'  shift, and goto state 9
+    '+'  shift, and goto state 7
+    '-'  shift, and goto state 8
+    '/'  shift, and goto state 10
+    '^'  shift, and goto state 12
+
+state 6 // '(' NUMBER ')'
+
+    2 expression: '(' expression ')' .  [$end, '%', ')', '*', '+', '-', '/', '^']
+
+    $end  reduce using rule 2 (expression)
+    '%'   reduce using rule 2 (expression)
+    ')'   reduce using rule 2 (expression)
+    '*'   reduce using rule 2 (expression)
+    '+'   reduce using rule 2 (expression)
+    '-'   reduce using rule 2 (expression)
+    '/'   reduce using rule 2 (expression)
+    '^'   reduce using rule 2 (expression)
+
+state 7 // NUMBER '+'
+
+    3 expression: expression '+' . expression  // assoc %left, prec 1
+
+    '('     shift, and goto state 3
+    NUMBER  shift, and goto state 4
+
+    expression  goto state 18
+
+state 8 // NUMBER '-'
+
+    4 expression: expression '-' . expression  // assoc %left, prec 1
+
+    '('     shift, and goto state 3
+    NUMBER  shift, and goto state 4
+
+    expression  goto state 17
+
+state 9 // NUMBER '*'
+
+    5 expression: expression '*' . expression  // assoc %left, prec 2
+
+    '('     shift, and goto state 3
+    NUMBER  shift, and goto state 4
+
+    expression  goto state 16
+
+state 10 // NUMBER '/'
+
+    6 expression: expression '/' . expression  // assoc %left, prec 2
+
+    '('     shift, and goto state 3
+    NUMBER  shift, and goto state 4
+
+    expression  goto state 15
+
+state 11 // NUMBER '%'
+
+    7 expression: expression '%' . expression  // assoc %left, prec 2
+
+    '('     shift, and goto state 3
+    NUMBER  shift, and goto state 4
+
+    expression  goto state 14
+
+state 12 // NUMBER '^'
+
+    8 expression: expression '^' . expression  // assoc %left, prec 2
+
+    '('     shift, and goto state 3
+    NUMBER  shift, and goto state 4
+
+    expression  goto state 13
+
+state 13 // NUMBER '^' NUMBER [$end]
+
+    3 expression: expression . '+' expression  // assoc %left, prec 1
+    4 expression: expression . '-' expression  // assoc %left, prec 1
+    5 expression: expression . '*' expression  // assoc %left, prec 2
+    6 expression: expression . '/' expression  // assoc %left, prec 2
+    7 expression: expression . '%' expression  // assoc %left, prec 2
+    8 expression: expression . '^' expression  // assoc %left, prec 2
+    8 expression: expression '^' expression .  [$end, '%', ')', '*', '+', '-', '/', '^']  // assoc %left, prec 2
+
+    $end  reduce using rule 8 (expression)
+    '%'   reduce using rule 8 (expression)
+    ')'   reduce using rule 8 (expression)
+    '*'   reduce using rule 8 (expression)
+    '+'   reduce using rule 8 (expression)
+    '-'   reduce using rule 8 (expression)
+    '/'   reduce using rule 8 (expression)
+    '^'   reduce using rule 8 (expression)
+
+state 14 // NUMBER '%' NUMBER [$end]
+
+    3 expression: expression . '+' expression  // assoc %left, prec 1
+    4 expression: expression . '-' expression  // assoc %left, prec 1
+    5 expression: expression . '*' expression  // assoc %left, prec 2
+    6 expression: expression . '/' expression  // assoc %left, prec 2
+    7 expression: expression . '%' expression  // assoc %left, prec 2
+    7 expression: expression '%' expression .  [$end, '%', ')', '*', '+', '-', '/', '^']  // assoc %left, prec 2
+    8 expression: expression . '^' expression  // assoc %left, prec 2
+
+    $end  reduce using rule 7 (expression)
+    '%'   reduce using rule 7 (expression)
+    ')'   reduce using rule 7 (expression)
+    '*'   reduce using rule 7 (expression)
+    '+'   reduce using rule 7 (expression)
+    '-'   reduce using rule 7 (expression)
+    '/'   reduce using rule 7 (expression)
+    '^'   reduce using rule 7 (expression)
+
+state 15 // NUMBER '/' NUMBER [$end]
+
+    3 expression: expression . '+' expression  // assoc %left, prec 1
+    4 expression: expression . '-' expression  // assoc %left, prec 1
+    5 expression: expression . '*' expression  // assoc %left, prec 2
+    6 expression: expression . '/' expression  // assoc %left, prec 2
+    6 expression: expression '/' expression .  [$end, '%', ')', '*', '+', '-', '/', '^']  // assoc %left, prec 2
+    7 expression: expression . '%' expression  // assoc %left, prec 2
+    8 expression: expression . '^' expression  // assoc %left, prec 2
+
+    $end  reduce using rule 6 (expression)
+    '%'   reduce using rule 6 (expression)
+    ')'   reduce using rule 6 (expression)
+    '*'   reduce using rule 6 (expression)
+    '+'   reduce using rule 6 (expression)
+    '-'   reduce using rule 6 (expression)
+    '/'   reduce using rule 6 (expression)
+    '^'   reduce using rule 6 (expression)
+
+state 16 // NUMBER '*' NUMBER [$end]
+
+    3 expression: expression . '+' expression  // assoc %left, prec 1
+    4 expression: expression . '-' expression  // assoc %left, prec 1
+    5 expression: expression . '*' expression  // assoc %left, prec 2
+    5 expression: expression '*' expression .  [$end, '%', ')', '*', '+', '-', '/', '^']  // assoc %left, prec 2
+    6 expression: expression . '/' expression  // assoc %left, prec 2
+    7 expression: expression . '%' expression  // assoc %left, prec 2
+    8 expression: expression . '^' expression  // assoc %left, prec 2
+
+    $end  reduce using rule 5 (expression)
+    '%'   reduce using rule 5 (expression)
+    ')'   reduce using rule 5 (expression)
+    '*'   reduce using rule 5 (expression)
+    '+'   reduce using rule 5 (expression)
+    '-'   reduce using rule 5 (expression)
+    '/'   reduce using rule 5 (expression)
+    '^'   reduce using rule 5 (expression)
+
+state 17 // NUMBER '-' NUMBER [$end]
+
+    3 expression: expression . '+' expression  // assoc %left, prec 1
+    4 expression: expression . '-' expression  // assoc %left, prec 1
+    4 expression: expression '-' expression .  [$end, ')', '+', '-']  // assoc %left, prec 1
+    5 expression: expression . '*' expression  // assoc %left, prec 2
+    6 expression: expression . '/' expression  // assoc %left, prec 2
+    7 expression: expression . '%' expression  // assoc %left, prec 2
+    8 expression: expression . '^' expression  // assoc %left, prec 2
+
+    $end  reduce using rule 4 (expression)
+    '%'   shift, and goto state 11
+    ')'   reduce using rule 4 (expression)
+    '*'   shift, and goto state 9
+    '+'   reduce using rule 4 (expression)
+    '-'   reduce using rule 4 (expression)
+    '/'   shift, and goto state 10
+    '^'   shift, and goto state 12
+
+state 18 // NUMBER '+' NUMBER [$end]
+
+    3 expression: expression . '+' expression  // assoc %left, prec 1
+    3 expression: expression '+' expression .  [$end, ')', '+', '-']  // assoc %left, prec 1
+    4 expression: expression . '-' expression  // assoc %left, prec 1
+    5 expression: expression . '*' expression  // assoc %left, prec 2
+    6 expression: expression . '/' expression  // assoc %left, prec 2
+    7 expression: expression . '%' expression  // assoc %left, prec 2
+    8 expression: expression . '^' expression  // assoc %left, prec 2
+
+    $end  reduce using rule 3 (expression)
+    '%'   shift, and goto state 11
+    ')'   reduce using rule 3 (expression)
+    '*'   shift, and goto state 9
+    '+'   reduce using rule 3 (expression)
+    '-'   reduce using rule 3 (expression)
+    '/'   shift, and goto state 10
+    '^'   shift, and goto state 12
+

@@ -1,0 +1,13 @@
+version: v2
+modules:
+  - path: proto
+# well-known types（google/protobuf/{duration,timestamp,...}.proto）经 BSR 引用，
+# 不再依赖 protoc 的系统 include 目录。
+deps:
+  - buf.build/protocolbuffers/wellknowntypes
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

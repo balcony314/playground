@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package msched.worker.v1;
+
+// Go 导入路径与包名由 buf.gen.yaml managed 统一注入
+// （go_package_prefix=github.com/balcony314/msched/ + 目录路径 → import path；
+//   包名按 package msched.worker.v1 → workerv1）。
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// WorkerService 是 Worker -> Scheduler 的 gRPC 接口（DESIGN §10）。
+//
+// Worker 主动 Pull（非阻塞），Scheduler 不 push。所有 RPC 在 gRPC metadata 携带
+// worker 身份凭证 token（key: "authorization"），由 server 端拦截器常量时间校验
+// （DESIGN §10，model.Worker.VerifyToken）。unit_id 作为业务字段在 request 内显式传递。
+service WorkerService {
+  // Register 上线注册（DESIGN §10）。
+  // 写 PostgreSQL workers 表（Labels/LeaseExpireTime/State），各撮合器下次刷新
+  // worker 视图时可见（§4.1，默认 1s）。不主动唤醒 BACKOFF 任务（纯退避到期，§8.6）。
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Pull 批量拉取已派发任务（DESIGN §9.2/§8.3/§10）。
+  // 非阻塞：扫 dispatch:{wuid}:* 轮询各 group 桶各取一个，凑满 batch 或扫完即返回；
+  // 空批立即返回空切片，Worker 端退避轮询。热路径零撮合零 CAS。
+  rpc Pull(PullRequest) returns (PullResponse);
+
+  // Heartbeat 刷新 worker 在线 lease（DESIGN §10）。
+  // lease 过期 -> worker 离线，其派发队列残留 SCHEDULED + 名下 RUNNING 靠 §8.4 超时回收。
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Report 回传执行结果到 PostgreSQL（DESIGN §10）。
+  // 失败由 scheduler 按 dispatch_count 兜底转 DISCARDED（§8.5），worker 不主动声明放弃。
+  rpc Report(ReportRequest) returns (ReportResponse);
+}
+
+// RegisterRequest 上线注册请求。
+message RegisterRequest {
+  // unit_id worker 唯一标识（DESIGN §3 workers 表）。
+  string unit_id = 1;
+  // labels 被 Task.WorkerSelector 单向子集匹配（S_t ⊆ L_w，DESIGN §4）。
+  map<string, string> labels = 2;
+  // capacity 并发槽位（容量模型待定，DESIGN §11）。
+  int32 capacity = 3;
+}
+
+// RegisterResponse 上线注册响应。
+message RegisterResponse {
+  // lease_expire_time 心跳 lease 到期时间，worker 据此安排下次 Heartbeat。
+  google.protobuf.Timestamp lease_expire_time = 1;
+}
+
+// PullRequest 批量拉取请求。
+message PullRequest {
+  // unit_id 拉取者身份（拉自己的 dispatch:{wuid}:* 队列）。
+  string unit_id = 1;
+  // batch 单轮期望拉取上限，凑满或队列扫完即返回（DESIGN §9.2）。
+  int32 batch = 2;
+}
+
+// PulledTask 已拉走的任务（SCHEDULED -> RUNNING，DESIGN §8.3）。
+message PulledTask {
+  // unit_id 任务唯一标识 = hash(group+Args)（DESIGN §3），全系统统一用 UnitID
+  // 作唯一标识/索引/Redis member；Report 时回传本字段定位任务。
+  string unit_id = 1;
+  // group_uid 租户隔离 ID（业务侧观测/分组，DESIGN §9）。
+  string group_uid = 2;
+  // args 任务参数（大字段，仅 PostgreSQL，不进 Redis，DESIGN §6）。
+  bytes args = 3;
+  // max_exec_duration 执行时长上限，worker 本地据此主动控超时；
+  // scheduler 侧 Timeout(PullTime+max_exec_duration) 同步兜底回收（DESIGN §8.4）。
+  google.protobuf.Duration max_exec_duration = 4;
+}
+
+// PullResponse 拉取响应。空批返回空 tasks（非阻塞，DESIGN §1.12）。
+message PullResponse {
+  repeated PulledTask tasks = 1;
+}
+
+// HeartbeatRequest 心跳请求。
+//
+// 既刷新 worker lease，也携带 worker 当前持有的任务 UnitID 集合作为任务级活性心跳。
+message HeartbeatRequest {
+  // unit_id 心跳者身份。
+  string unit_id = 1;
+  // running_unit_ids worker 当前持有的 RUNNING 任务 UnitID 集合（任务级心跳）。
+  //
+  // scheduler 据此加速回收：lease_owner=wuid 但持续未上报的 RUNNING 任务视为丢失，
+  // 提前 reschedule 回 PENDING，不必等执行硬截止 Timeout（DESIGN §8.4 超时回收的补充）。
+  // UnitID = hash(group+Args)（DESIGN §3），worker 侧以业务标识跟踪，跨重启可恢复。
+  // 反查：WHERE unit_id IN (...) AND lease_owner=? AND state='RUNNING'，靠 UnitID 索引。
+  repeated string running_unit_ids = 2;
+}
+
+// HeartbeatResponse 心跳响应。
+message HeartbeatResponse {
+  // lease_expire_time 续期后的新 lease 到期时间。
+  google.protobuf.Timestamp lease_expire_time = 1;
+  // recovered_unit_ids scheduler 已回收（转 PENDING/DISCARDED）的 UnitID 列表。
+  //
+  // 即 worker 上报的 running_unit_ids 中，scheduler 侧已不认其为该 worker 持有的任务
+  // （已超时回收或重新派发他处）。worker 据此立即丢弃本地执行状态，无需等下次 Pull 发现。
+  repeated string recovered_unit_ids = 2;
+}
+
+// ExecResult 执行结果（二态，DESIGN §10/§8.5）。
+enum ExecResult {
+  // EXEC_RESULT_UNSPECIFIED 未指定，不应出现（proto3 枚举零值占位）。
+  EXEC_RESULT_UNSPECIFIED = 0;
+  // EXEC_RESULT_SUCCEEDED 执行成功，payload 为结果数据。
+  EXEC_RESULT_SUCCEEDED = 1;
+  // EXEC_RESULT_FAILED 执行失败，error 为原因；scheduler 按 dispatch_count 兜底 reschedule/DISCARDED。
+  EXEC_RESULT_FAILED = 2;
+}
+
+// ReportRequest 回传执行结果请求。
+message ReportRequest {
+  // worker_unit_id 上报者身份（worker 的 unit_id；本 message 已有 task 的 unit_id 字段，加前缀区分）。
+  string worker_unit_id = 1;
+  // unit_id 对应任务唯一标识 = hash(group+Args)（DESIGN §3），定位 tasks 行。
+  string unit_id = 2;
+  // result 执行结果状态。
+  ExecResult result = 3;
+  // payload 成功时的结果数据（写入 tasks.Result）。
+  bytes payload = 4;
+  // error 失败时的原因（观测用）。
+  string error = 5;
+}
+
+// ReportResponse 回传响应。
+message ReportResponse {}

@@ -1,0 +1,63 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  AI_AGENT_OUTPUT: build/ai-agent
+
+tasks:
+  default:
+    desc: 显示所有可用任务
+    cmds:
+      - task --list
+
+  build:
+    desc: 编译到 build 目录
+    cmds:
+      - go build -o {{.AI_AGENT_OUTPUT}} .
+    generates:
+      - "{{.AI_AGENT_OUTPUT}}"
+
+  run:
+    desc: 编译并运行（Mock 模式）
+    deps:
+      - build
+    cmds:
+      - cmd: "{{.AI_AGENT_OUTPUT}}"
+        interactive: true
+
+  run:openai:
+    desc: 运行（需设置 OPENAI_API_KEY 环境变量）
+    deps:
+      - build
+    cmds:
+      - cmd: "{{.AI_AGENT_OUTPUT}} -api-key $OPENAI_API_KEY -model gpt-4o"
+        interactive: true
+
+  run:ollama:
+    desc: 运行（连接本地 Ollama）
+    deps:
+      - build
+    cmds:
+      - cmd: "{{.AI_AGENT_OUTPUT}} -api-key dummy -base-url http://localhost:11434/v1 -model qwen2"
+        interactive: true
+
+  test:
+    desc: 运行测试
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: 静态分析
+    cmds:
+      - go vet ./...
+
+  clean:
+    desc: 清理构建产物
+    cmds:
+      - rm -rf build
+
+  tidy:
+    desc: 整理依赖
+    cmds:
+      - go mod tidy

@@ -1,0 +1,126 @@
+// lex.nex - nex 词法分析器规范文件
+// 生成文件：lex.nn.go（不要手动编辑）
+// 词法规则：匹配数学表达式中的各类 token
+
+// 非负整数：支持 0 和 [1-9][0-9]* 格式
+/[1-9][0-9]*|0/
+{
+    tokenList = append(tokenList, &token{
+       id: NON_NEGATIVE_INTEGER,
+       raw: yylex.Text(),
+    })
+}
+
+// 加法运算符
+/\+/
+{
+    tokenList = append(tokenList, &token{
+       id: ADD,
+    })
+}
+
+// 减法运算符
+/-/
+{
+    tokenList = append(tokenList, &token{
+       id: SUB,
+    })
+}
+
+// 乘法运算符
+/\*/
+{
+    tokenList = append(tokenList, &token{
+       id: MUL,
+    })
+}
+
+// 除法运算符
+/\//
+{
+    tokenList = append(tokenList, &token{
+       id: DIV,
+    })
+}
+
+// 取模运算符
+/%/
+{
+    tokenList = append(tokenList, &token{
+       id: MOD,
+    })
+}
+
+// 幂运算符
+/\^/
+{
+    tokenList = append(tokenList, &token{
+       id: EXP,
+    })
+}
+
+// 左括号
+/\(/
+{
+    tokenList = append(tokenList, &token{
+       id: LEFT_PAEENTHWESES,
+    })
+}
+
+// 右括号
+/\)/
+{
+    tokenList = append(tokenList, &token{
+       id: RIGHT_PAEENTHWESES,
+    })
+}
+
+// 忽略空白字符
+/[ \t]+/        { /* eat up whitespace */ }
+
+// 未知字符报错
+/./               { err = UnknownCharErr }
+
+// 以下是 Go 代码部分，会被复制到生成的 lex.nn.go 中
+//
+package eval
+
+import (
+    "bytes"
+    "errors"
+)
+
+const (
+    ADD = int('+')              // 加法
+    SUB = int('-')              // 减法
+    MUL = int('*')              // 乘法
+    DIV = int('/')              // 除法
+    MOD = int('%')              // 取模
+    EXP = int('^')              // 幂运算
+
+    LEFT_PAEENTHWESES  = int('(')   // 左括号
+    RIGHT_PAEENTHWESES = int(')')   // 右括号
+
+    NON_NEGATIVE_INTEGER = 0   // 非负整数 token ID
+)
+
+var (
+    UnknownCharErr error = errors.New("unknown character")
+)
+
+// token 词法分析结果
+type token struct {
+    id  int    // token 类型
+    raw string // 原始文本（仅数值 token 有值）
+}
+
+// lexicalAnalysis 执行词法分析，返回 token 列表
+func lexicalAnalysis(raw string) (tokenList []*token, err error) {
+    buf := bytes.NewBufferString(raw)
+    lexer := NewLexer(buf)
+
+    NN_FUN(lexer)
+
+    return
+}
+

@@ -1,0 +1,62 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  BINARY: gprobe
+  TARGET: target
+
+tasks:
+  default:
+    desc: 编译 eBPF 并构建探针和示例
+    cmds:
+      - task: generate
+      - task: build
+      - task: examples
+
+  generate:
+    desc: 编译 eBPF 程序
+    cmds:
+      - go generate ./internal/bpf/...
+
+  build:
+    desc: 构建探针
+    cmds:
+      - go build -o bin/{{.BINARY}} ./cmd/gprobe
+
+  examples:
+    desc: 构建示例程序
+    cmds:
+      - go build -gcflags="all=-N -l" -o bin/{{.TARGET}} ./examples/target
+
+  clean:
+    desc: 清理构建产物
+    cmds:
+      - rm -rf bin/
+      - rm -f internal/bpf/*.o
+      - rm -f internal/bpf/*_bpf*.go
+
+  test:
+    desc: 运行测试
+    cmds:
+      - go test ./...
+
+  build-linux:
+    desc: 交叉编译 (Linux)
+    cmds:
+      - GOOS=linux GOARCH=amd64 go build -o bin/{{.BINARY}}-linux-amd64 ./cmd/gprobe
+
+  install:
+    desc: 安装到 GOPATH/bin
+    cmds:
+      - go install ./cmd/gprobe
+
+  fmt:
+    desc: 格式化代码
+    cmds:
+      - go fmt ./...
+
+  lint:
+    desc: 静态检查
+    cmds:
+      - golangci-lint run ./...

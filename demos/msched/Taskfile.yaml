@@ -1,0 +1,68 @@
+version: '3'
+
+vars:
+  VERSION: '{{.VERSION | default "dev"}}'
+  LDFLAGS: -X github.com/balcony314/msched/internal/version.Version={{.VERSION}}
+
+tasks:
+  default:
+    desc: 构建全部二进制
+    cmds:
+      - task: scheduler
+      - task: worker
+
+  build:
+    desc: 构建全部二进制
+    cmds:
+      - task: default
+
+  scheduler:
+    desc: 构建 msched-scheduler
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o bin/msched-scheduler ./cmd/scheduler
+
+  worker:
+    desc: 构建 msched-worker
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o bin/msched-worker ./cmd/worker
+
+  test:
+    desc: 运行测试
+    cmds:
+      - go test ./...
+
+  test-integration:
+    desc: 运行集成测试（需 CockroachDB，环境变量 MSCHED_PG_DSN 覆盖默认连接）
+    cmds:
+      - go test -tags=integration ./...
+
+  vet:
+    desc: go vet
+    cmds:
+      - go vet ./...
+
+  proto:
+    desc: 生成 gRPC 代码（buf）
+    cmds:
+      - buf lint
+      - buf generate
+
+  proto-deps:
+    desc: 同步 buf 依赖（buf.lock）
+    cmds:
+      - buf dep update
+
+  fmt:
+    desc: 格式化
+    cmds:
+      - gofmt -s -w .
+
+  tidy:
+    desc: go mod tidy
+    cmds:
+      - go mod tidy
+
+  clean:
+    desc: 清理构建产物
+    cmds:
+      - rm -rf bin/ dist/

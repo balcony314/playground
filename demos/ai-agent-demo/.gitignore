@@ -1,0 +1,19 @@
+# 编译产物
+build/
+ai-agent
+.claude/
+*.exe
+
+# 测试覆盖率
+coverage.html
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.agents/
+skills-lock.json
