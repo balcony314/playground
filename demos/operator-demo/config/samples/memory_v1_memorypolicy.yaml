@@ -1,0 +1,18 @@
+apiVersion: memory.example.com/v1
+kind: MemoryPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: operator-demo
+    app.kubernetes.io/managed-by: kustomize
+  name: memorypolicy-sample
+spec:
+  # 目标命名空间，不填则监控所有命名空间
+  namespace: "default"
+  # 内存阈值百分比（80 表示 80%）
+  threshold: 80
+  # 触发动作：add-label 或 add-annotation
+  action: "add-label"
+  # 标签/注解的键值对
+  marker:
+    key: "memory-overload"
+    value: "true"
