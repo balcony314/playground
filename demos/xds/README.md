@@ -160,17 +160,6 @@ xds_nacos_port=8849 xds_xds_grpcport=8092 ./bin/xds-server
 
 这与基于服务树 TreeId 的可见性模型不同：本项目的可见性以**服务名**为最小单元，不依赖任何外部服务树。
 
-## 已知行为差异与限制
-
-以下为相对内部原版（基于私有 SDK）的已知差异，部署前请确认：
-
-1. **服务端健康探测禁用逻辑已移除**：开源 Nacos 无集群元数据更新 API（`UpdateClusterMetadata`），实例注册后不再禁用服务端健康探测。开源 Nacos 对实例注册自动创建的服务默认即为 NONE 探测，语义等价；**若集群已显式配置 TCP 探测，需自行经 Nacos openapi（`PUT /nacos/v1/ns/cluster`）处理**。
-2. **订阅模型为逐服务订阅 + 周期 diff 轮询**：对每个服务分别建立实例订阅与配置监听，并以 `nacos.syncInterval`（默认 30s）轮询服务列表做增量补订阅/退订；没有内部版 SDK 的全局订阅能力，新增服务的感知延迟最长为一个轮询周期。
-3. **服务发现范围限定在 `nacos.group`**：注册、订阅、配置监听均显式限定在配置的分组内，共享 Nacos 上其他分组/业务的数据不会被读取。
-4. **HTTP API 无鉴权**：假设内网部署；如需暴露到公网请自行加网关鉴权。admin 接口在独立端口且仅绑定 127.0.0.1。
-5. **日志方案为 slog + lumberjack**：按 `log.*` 配置滚动（大小/份数/天数），不依赖外部日志代理。
-6. **事件队列为自研轻量实现**：语义对齐 k8s client-go workqueue（dirty/processing 集合去重、指数退避限速重试、panic 后 worker 自动重启），但非 k8s 依赖，也不具备持久化能力——进程重启后依赖 Nacos 订阅回调与全量初始化重建缓存。
-
 ## 开发
 
 常用命令（[Taskfile.yml](Taskfile.yml)，需要 [go-task](https://taskfile.dev)）：

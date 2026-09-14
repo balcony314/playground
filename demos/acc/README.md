@@ -103,10 +103,6 @@ mosquitto_pub -h 127.0.0.1 -p 1883 -t a/b -q 1 -m qos1msg
 - **冒烟**：`./tests/smoke.sh`（端口连通/worker respawn/优雅退出）、
   `./tests/tls_smoke.sh`（TLS 握手 + MQTT over TLS）
 
-## 设计文档
-
-见 [docs/superpowers/specs/2026-09-14-acc-rebuild-design.md](docs/superpowers/specs/2026-09-14-acc-rebuild-design.md)。
-
 ## 许可证
 
 - 本项目：MIT，见 [LICENSE](LICENSE)
