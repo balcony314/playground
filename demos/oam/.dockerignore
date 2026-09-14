@@ -1,7 +1,0 @@
-bin/
-testbin/
-.git/
-config/
-docs/
-*.md
-cover.out

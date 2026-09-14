@@ -1,9 +1,0 @@
-# 此 kustomization.yaml 由 kubebuilder scaffolding 生成，用于聚合 CRD 清单。
-# 增删 CRD 后运行 `task manifests` 重新生成 config/crd/bases。
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-- bases/oam.example.com_deployunits.yaml
-- bases/oam.example.com_deployunithistories.yaml
-#+kubebuilder:scaffold:crdkustomizeresource

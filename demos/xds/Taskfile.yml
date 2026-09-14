@@ -1,0 +1,53 @@
+version: "3"
+
+vars:
+  BINARY: bin/xds-server
+  PKG: github.com/balcony314/xds
+  LDFLAGS: >-
+    -X {{.PKG}}/pkg/buildinfo.buildVersion={{.VERSION | default "dev"}}
+    -X {{.PKG}}/pkg/buildinfo.buildGitRevision={{.REVISION | default "unknown"}}
+    -X {{.PKG}}/pkg/buildinfo.buildTime={{now | date "2006-01-02T15:04:05Z07:00"}}
+
+tasks:
+  build:
+    desc: 编译到 bin/xds-server（注入版本信息）
+    cmds:
+      - mkdir -p bin
+      - go build -ldflags '{{.LDFLAGS}}' -o {{.BINARY}} ./cmd/xds-server
+
+  run:
+    desc: 编译并运行
+    cmds:
+      - task: build
+      - ./{{.BINARY}}
+
+  test:
+    desc: 全量测试
+    cmds:
+      - go test -race -cover -covermode=atomic ./...
+
+  lint:
+    desc: golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: 格式化
+    cmds:
+      - gofmt -w .
+      - goimports -w -local github.com/balcony314/xds .
+
+  tidy:
+    desc: go mod tidy
+    cmds:
+      - go mod tidy
+
+  docker:
+    desc: 构建镜像
+    cmds:
+      - docker build -t xds-server .
+
+  clean:
+    desc: 清理构建产物
+    cmds:
+      - rm -rf bin log

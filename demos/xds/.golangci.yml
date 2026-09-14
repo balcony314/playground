@@ -1,0 +1,12 @@
+version: "2"
+linters:
+  default: standard
+  disable:
+    - errcheck  # 迁移代码中 err 已按语义处理
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - misspell
+run:
+  timeout: 5m

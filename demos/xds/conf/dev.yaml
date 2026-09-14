@@ -1,0 +1,33 @@
+debug: true
+
+log:
+  level: debug
+  format: console      # console | json
+  dir: ./log
+  maxSize: 100         # MB
+  maxBackups: 5
+  maxAge: 7            # days
+
+web:
+  address: "0.0.0.0:8080"
+  adminPort: 8081
+
+xds:
+  grpcPort: 8090       # xDS gRPC discovery（Envoy 直连）
+  restPort: 8091       # xDS REST gateway（调试用）
+
+tracing:
+  domain: ""           # OpenTelemetry Collector 地址；为空则不下发 tracing cluster
+  port: 0              # OpenTelemetry Collector 端口
+
+nacos:
+  address: "127.0.0.1"
+  port: 8848
+  namespace: "xds"
+  group: "default_group"
+  username: ""
+  password: ""
+  logDir: "/tmp/nacos"
+  cacheDir: "/tmp/nacos"
+  logLevel: "warn"
+  syncInterval: "30s"  # 订阅集合 diff 轮询周期
