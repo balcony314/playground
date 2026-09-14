@@ -1,0 +1,47 @@
+version: '3'
+
+tasks:
+  build:
+    desc: 配置并编译
+    cmds:
+      - cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - cmake --build build -j {{.CPUS | default 4}}
+
+  test:
+    desc: 运行单元测试
+    cmds:
+      - task: build
+      - ctest --test-dir build --output-on-failure
+
+  e2e:
+    desc: 端到端验收（spawn acc + 自研 MQTT 客户端用例，需在仓库根运行）
+    cmds:
+      - task: build
+      - ./build/tests/e2e/acc_e2e
+
+  run:
+    desc: 前台运行 acc
+    cmds:
+      - task: build
+      - ./build/acc -c conf/acc.conf
+
+  gen-certs:
+    desc: 生成测试用自签 TLS 证书
+    cmds:
+      - openssl req -x509 -newkey rsa:2048 -nodes -days 365
+        -keyout conf/key.pem -out conf/cert.pem -subj "/CN=localhost"
+
+  fmt:
+    desc: clang-format 格式化（需本机安装）
+    cmds:
+      - clang-format -i src/*.c src/*/*.h src/*/*.c tests/*.c tests/*.h
+
+  lint:
+    desc: cppcheck 静态检查（需本机安装）
+    cmds:
+      - cppcheck --enable=warning,style --inline-suppr -I src src/ tests/ || true
+
+  clean:
+    desc: 清理构建产物
+    cmds:
+      - rm -rf build

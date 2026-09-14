@@ -1,0 +1,7 @@
+build/
+logs/
+metrics/
+conf/*.pem
+*.o
+*.a
+compile_commands.json

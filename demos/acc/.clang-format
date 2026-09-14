@@ -1,0 +1,17 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+IndentWidth: 4
+TabWidth: 8
+UseTab: Never
+ColumnLimit: 80
+AccessModifierOffset: -4
+AlignTrailingComments: true
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+BreakBeforeBraces: Attach
+DerivePointerAlignment: false
+PointerAlignment: Right
+SortIncludes: false
+SpaceAfterCStyleCast: false
+IndentCaseLabels: true
