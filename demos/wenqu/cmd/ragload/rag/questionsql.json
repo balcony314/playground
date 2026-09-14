@@ -1,0 +1,34 @@
+[
+  {
+    "question": "上个月销售额最高的前 5 个商品类目是哪些？",
+    "sql": "SELECT category, sum(amount) AS total_amount FROM demo.orders WHERE pay_status = 'paid' AND created_at >= dateSub('month', 1, now()) GROUP BY category ORDER BY total_amount DESC LIMIT 5"
+  },
+  {
+    "question": "最近 7 天每天的订单量和成交金额走势",
+    "sql": "SELECT toDate(created_at) AS dt, count() AS order_cnt, sumIf(amount, pay_status = 'paid') AS paid_amount FROM demo.orders WHERE created_at >= dateSub('day', 7, now()) GROUP BY dt ORDER BY dt"
+  },
+  {
+    "question": "有多少订单目前处于待支付状态？",
+    "sql": "SELECT count() AS pending_cnt FROM demo.orders WHERE pay_status = 'pending'"
+  },
+  {
+    "question": "各下单渠道的订单占比情况",
+    "sql": "SELECT channel, count() AS order_cnt, round(count() / sum(count()) OVER () * 100, 2) AS ratio_pct FROM demo.orders GROUP BY channel ORDER BY order_cnt DESC"
+  },
+  {
+    "question": "广东省用户最近一个月的平均客单价",
+    "sql": "SELECT round(avg(amount), 2) AS avg_amount FROM demo.orders WHERE province = '广东' AND pay_status = 'paid' AND created_at >= dateSub('month', 1, now())"
+  },
+  {
+    "question": "昨天移动端访问量最高的 10 个页面",
+    "sql": "SELECT page, count() AS pv FROM demo.user_visits WHERE event_date = yesterday() AND device = 'mobile' GROUP BY page ORDER BY pv DESC LIMIT 10"
+  },
+  {
+    "question": "最近一周的跳出率是多少？",
+    "sql": "SELECT round(sum(is_bounce) / count() * 100, 2) AS bounce_rate_pct FROM demo.user_visits WHERE event_date >= today() - 7"
+  },
+  {
+    "question": "统计各省份退款订单数量分布",
+    "sql": "SELECT province, count() AS refunded_cnt FROM demo.orders WHERE pay_status = 'refunded' GROUP BY province ORDER BY refunded_cnt DESC"
+  }
+]

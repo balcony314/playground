@@ -1,0 +1,30 @@
+[
+  {
+    "question": "搜一下最近关于电池续航的评价",
+    "dsl": "{\"index\":\"product_reviews\",\"dsl\":{\"size\":10,\"query\":{\"bool\":{\"must\":[{\"match\":{\"content\":\"电池续航\"}}],\"filter\":[{\"range\":{\"created_at\":{\"gte\":\"now-30d\"}}}]}},\"sort\":[{\"created_at\":{\"order\":\"desc\"}}]}}"
+  },
+  {
+    "question": "有哪些差评提到发货慢？",
+    "dsl": "{\"index\":\"product_reviews\",\"dsl\":{\"size\":10,\"query\":{\"bool\":{\"must\":[{\"match\":{\"content\":\"发货慢\"}},{\"term\":{\"rating\":1}}]}}}}"
+  },
+  {
+    "question": "统计各情感倾向的评论数量",
+    "dsl": "{\"index\":\"product_reviews\",\"dsl\":{\"size\":0,\"aggs\":{\"by_sentiment\":{\"terms\":{\"field\":\"sentiment\",\"size\":10}}}}}"
+  },
+  {
+    "question": "昨天以来 payment 服务的错误日志",
+    "dsl": "{\"index\":\"app_logs\",\"dsl\":{\"size\":10,\"query\":{\"bool\":{\"must\":[{\"term\":{\"service\":\"payment\"}},{\"term\":{\"level\":\"ERROR\"}}],\"filter\":[{\"range\":{\"created_at\":{\"gte\":\"now-1d\"}}}]}},\"sort\":[{\"created_at\":{\"order\":\"desc\"}}]}}"
+  },
+  {
+    "question": "接口耗时超过 1 秒的请求有哪些？",
+    "dsl": "{\"index\":\"app_logs\",\"dsl\":{\"size\":10,\"query\":{\"range\":{\"latency_ms\":{\"gt\":1000}}},\"sort\":[{\"latency_ms\":{\"order\":\"desc\"}}]}}"
+  },
+  {
+    "question": "5xx 状态码的日志按接口统计出现次数",
+    "dsl": "{\"index\":\"app_logs\",\"dsl\":{\"size\":0,\"query\":{\"range\":{\"status\":{\"gte\":500,\"lt\":600}}},\"aggs\":{\"by_endpoint\":{\"terms\":{\"field\":\"endpoint\",\"size\":10}}}}}"
+  },
+  {
+    "question": "包含 timeout 关键词的最新 20 条日志",
+    "dsl": "{\"index\":\"app_logs\",\"dsl\":{\"size\":20,\"query\":{\"match\":{\"message\":\"timeout\"}},\"sort\":[{\"created_at\":{\"order\":\"desc\"}}]}}"
+  }
+]

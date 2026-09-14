@@ -1,0 +1,14 @@
+# 二进制
+bin/
+*.exe
+
+# 本地环境配置（含凭证）
+.env
+deploy/.env
+
+# Taskfile 运行缓存
+.task/
+
+# IDE
+.idea/
+.vscode/

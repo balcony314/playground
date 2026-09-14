@@ -1,0 +1,164 @@
+version: '3'
+
+# 项目常用任务入口：task --list 查看全部
+# 依赖 [go-task/task](https://taskfile.dev)；任务自动加载根目录 .env
+
+dotenv: ['.env']
+
+vars:
+  COMPOSE: docker compose -f deploy/compose.yml
+  API: http://127.0.0.1:5002
+
+tasks:
+  default:
+    desc: 显示任务列表
+    cmds:
+      - task --list
+
+  # ==================== 依赖环境（docker compose） ====================
+
+  deps:up:
+    desc: 启动全部依赖容器并等待就绪（etcd/minio/milvus/clickhouse/mcp-clickhouse/es）
+    cmds:
+      - '{{.COMPOSE}} up -d'
+      - task: deps:wait
+
+  deps:wait:
+    desc: 轮询等待依赖服务健康（CH/Milvus/ES/MCP 四端点探测，超时 120s）
+    cmds:
+      - |
+        echo "等待依赖就绪 ..."
+        for i in $(seq 1 60); do
+          ok=1
+          curl -sf http://127.0.0.1:8123/ping >/dev/null || ok=0
+          curl -sf http://127.0.0.1:9091/healthz >/dev/null || ok=0
+          curl -sf http://127.0.0.1:9200/_cluster/health >/dev/null || ok=0
+          timeout 2 curl -sN http://127.0.0.1:4200/sse 2>/dev/null | head -1 | grep -q "event:" || ok=0
+          if [ "$ok" = 1 ]; then echo "全部依赖就绪"; exit 0; fi
+          sleep 2
+        done
+        echo "等待超时，请用 task deps:ps 检查容器状态" >&2
+        exit 1
+
+  deps:ps:
+    desc: 查看容器状态
+    cmds:
+      - '{{.COMPOSE}} ps'
+
+  deps:logs:
+    desc: 跟随查看容器日志（Ctrl-C 退出）
+    cmds:
+      - '{{.COMPOSE}} logs -f'
+
+  deps:down:
+    desc: 停止容器（保留数据卷）
+    cmds:
+      - '{{.COMPOSE}} down'
+
+  deps:clean:
+    desc: 停止容器并删除数据卷（清空 ClickHouse/ES/Milvus 全部数据，需重新 init + ragload）
+    cmds:
+      - '{{.COMPOSE}} down -v'
+
+  # ==================== 演示数据 ====================
+
+  init:
+    desc: 初始化 ClickHouse + ES 演示数据（幂等：重置为初始数据集）
+    cmds:
+      - task: init:ch
+      - task: init:es
+
+  init:ch:
+    desc: ClickHouse：重建 demo 库表并写入订单/访问演示数据
+    sources:
+      - deploy/init/clickhouse.sql
+    cmds:
+      - '{{.COMPOSE}} exec -T clickhouse clickhouse-client --multiquery < deploy/init/clickhouse.sql'
+      - echo "demo.orders 行数："
+      - '{{.COMPOSE}} exec -T clickhouse clickhouse-client --query "SELECT count() FROM demo.orders"'
+
+  init:es:
+    desc: Elasticsearch：重建 product_reviews/app_logs 索引并写入演示文档
+    sources:
+      - deploy/init/elasticsearch.sh
+    cmds:
+      - bash deploy/init/elasticsearch.sh
+
+  # ==================== RAG 知识库 ====================
+
+  ragload:
+    desc: 灌 RAG 知识库（DDL/Mapping/问答语料 → Milvus，主键为内容 hash，幂等）
+    deps: [deps:wait]
+    cmds:
+      - go run ./cmd/ragload
+
+  # ==================== 服务 ====================
+
+  server:
+    desc: 前台启动查询服务（:5002，依赖环境需已就绪）
+    deps: [deps:wait]
+    cmds:
+      - go run ./cmd/server
+
+  # ==================== 质量检查 ====================
+
+  check:
+    desc: go build + go vet + go test + golangci-lint
+    cmds:
+      - go build ./...
+      - go vet ./...
+      - go test ./...
+      - golangci-lint run ./...
+
+  # ==================== 冒烟验证 ====================
+
+  smoke:single:
+    desc: 冒烟：单源同步接口（react agent 经 MCP 查 ClickHouse）
+    cmds:
+      - echo '== GET /db_search/clickhouse =='
+      - curl -s '{{.API}}/api/v1/db_search/clickhouse?content=demo库里订单表有多少条数据'
+      - echo
+
+  smoke:stream:
+    desc: 冒烟：单源 SSE 流式接口
+    cmds:
+      - echo '== GET /db_search/clickhouse/stream =='
+      - curl -sN '{{.API}}/api/v1/db_search/clickhouse/stream?content=统计各支付状态的订单数'
+
+  smoke:multi:
+    desc: 冒烟：多源状态图接口（返回 Markdown 查询报告）
+    cmds:
+      - echo '== GET /db_search/multi_datasource =='
+      - curl -s '{{.API}}/api/v1/db_search/multi_datasource?content=上个月销售额最高的类目是哪些，再看看手机相关的差评'
+      - echo
+
+  # ==================== 一键端到端 ====================
+
+  e2e:
+    desc: 一键端到端：起依赖 → 初始化数据 → 灌库 → 起服务 → 三接口冒烟 → 退出清理（需 .env 配好可用模型端点）
+    cmds:
+      - task: deps:up
+      - task: init
+      - task: ragload
+      - |
+        set -e
+        if curl -sf {{.API}}/healthz >/dev/null 2>&1; then
+          echo "检测到服务已在 :5002 运行，复用现有服务"
+          SERVER_PID=""
+        else
+          echo "编译并后台启动 server ..."
+          go build -o /tmp/agent-workflow-server ./cmd/server
+          /tmp/agent-workflow-server &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+        fi
+        echo "等待服务就绪 ..."
+        for i in $(seq 1 30); do
+          curl -sf {{.API}}/healthz >/dev/null 2>&1 && break
+          sleep 1
+        done
+        curl -sf {{.API}}/healthz >/dev/null || { echo "服务启动失败，请检查 .env 配置" >&2; exit 1; }
+      - task: smoke:single
+      - task: smoke:stream
+      - task: smoke:multi
+      - echo "端到端验证完成 ✅"

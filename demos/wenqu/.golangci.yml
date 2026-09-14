@@ -1,0 +1,39 @@
+# golangci-lint v2 配置：业内通行检查集（默认集 + 风格增强）
+# 用法：golangci-lint run ./...（Taskfile 的 check 任务已集成）
+version: "2"
+
+linters:
+  # v2 默认启用 errcheck / govet / ineffassign / staticcheck / unused
+  enable:
+    - revive        # golint 继任：导出注释、命名、包注释
+    - gocritic      # 风格与代码简化建议
+    - misspell      # 拼写检查
+    - copyloopvar   # go1.22+ 循环变量语义相关误用
+    - nolintlint    # 保证 nolint 注释规范
+  settings:
+    revive:
+      rules:
+        - name: exported          # 导出符号须有以标识符开头的注释
+        - name: package-comments  # 包须有 Package 注释
+        - name: var-naming        # 命名规范（Err 前缀等）
+        - name: error-naming
+        - name: error-strings
+        - name: error-return
+        - name: increment-decrement
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: superfluous-else
+    gocritic:
+      # 默认 stable + style 检查之外追加
+      disable-all: false
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+run:
+  timeout: 5m

@@ -1,0 +1,20 @@
+# EditorConfig：跨编辑器统一基础格式 https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.go]
+indent_style = tab
+# gofmt 统一接管格式化，编辑器无需额外配置
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.{json,md,sql,sh}]
+indent_style = space
+indent_size = 2
