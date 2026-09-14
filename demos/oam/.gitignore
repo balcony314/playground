@@ -1,0 +1,16 @@
+# 构建产物
+bin/
+testbin/
+
+# 测试覆盖率输出
+cover.out
+cover.html
+
+# 编辑器与系统文件
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 本地环境变量
+.env

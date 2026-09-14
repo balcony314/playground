@@ -1,0 +1,43 @@
+# DeployUnit 示例：一个无状态组件 + scaler/mount/sidecar trait。
+apiVersion: oam.example.com/v1
+kind: DeployUnit
+metadata:
+  name: demo-app
+  namespace: default
+spec:
+  components:
+    - name: web
+      type: stateless
+      properties:
+        image: nginx:1.27
+        ports:
+          - port: 8080
+            protocol: TCP
+        env:
+          - name: LOG_LEVEL
+            value: info
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        readinessProbe:
+          type: http
+          path: /healthz
+          port: 8080
+      traits:
+        - type: scaler
+          properties:
+            replicas: 3
+            maxSurge: 25%
+            maxUnavailable: 25%
+        - type: mount
+          properties:
+            mountPath: /etc/app
+            files:
+              - name: app.conf
+                content: |
+                  key = value
+        - type: sidecar
+          properties:
+            name: log-shipper
+            image: fluent/fluent-bit:3.0
