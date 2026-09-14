@@ -60,6 +60,32 @@ flowchart LR
 | **Elasticsearch** | 倒排索引全文检索；Index / Mapping / 分词器（analyzer）；Query DSL（`bool`/`match`/`range`/`term`）；Search API 只读 |
 | **Milvus** | 向量数据库；Collection / Field / 主键 / FloatVector 维度（创建后不可改）；AutoIndex |
 
+### 6.1 Elasticsearch：字段类型与索引机制
+
+**keyword vs text**——ES 字符串的两大类型，区别在"值切成几个词条（term）进倒排索引"：
+
+| | `keyword` | `text` |
+|---|---|---|
+| 分词 | ❌ 整串原样一个 term | ✅ 经 analyzer 切成多个 term |
+| 典型查询 | `term` / `terms` 精确等值 | `match` 全文检索 + 相关性打分 |
+| 聚合/排序 | ✅（doc_values 列存） | ❌ 需走 `.keyword` 子字段 |
+| 适用字段 | ID、枚举、标签、维度 | 标题、正文、日志消息 |
+
+本项目初始化脚本（`deploy/init/elasticsearch.sh`）即按此划分：`service` / `level` / `sentiment` 等枚举维度用 keyword（供 term 过滤 + 聚合），`title` / `content` / `message` 用 text（供分词全文检索）。
+
+**ID 选 keyword 还是数值类型？**——看有无数值语义。`user_id` 用 `integer`：范围查询走数值序（keyword 是字典序，`"999" > "1001"` 会出错），且支持 `avg` / `stats` 数值聚合；`product_id` 用 keyword：只是标签，仅做等值匹配与分组。口诀：**只用来"等值 + 分组"是 keyword，还承载大小/顺序/运算语义是数值类型**。
+
+**每个字段背后有两套结构**：
+
+| 结构 | 方向 | 用途 |
+|------|------|------|
+| 倒排索引（term → doc list） | term 找文档 | 等值 / 全文查询 |
+| doc_values（doc → 值，列存） | 文档取值 | 聚合、排序 |
+
+数值/日期类不建倒排，走 BKD 树（point 索引），支持等值与范围。
+
+**索引结构是类型声明的"副作用"，自动创建**——与 PostgreSQL 需显式 `CREATE INDEX` 不同：ES 里倒排索引就是存储本身（没有"无索引的堆表"，一切查询都走索引结构），mapping 声明类型后写入即建索引，无需 DDL；PG 的索引是堆表之上的可选加速结构，加不加是性能取舍。ES 连 mapping 也可省略（动态映射按值猜类型），但会猜错——如 `"501"` 猜成 `text` + `.keyword` 子字段而非纯 keyword、`1001` 猜成 `long` 而非 `integer`——且类型一经写入不可改（只能 reindex 迁移），所以本脚本显式声明全部 mapping。
+
 ## 7. 协议与接口
 
 - **OpenAI 兼容协议**：`POST {base}/chat/completions`（messages / tools / stream）。本项目模型网关可指向任意兼容端点（OpenRouter、GLM 等）；带 `tools` 的请求中，模型以 `tool_calls` 字段返回调用意图；流式响应按 chunk 增量返回 `delta.content` / `delta.reasoning_content` / `delta.tool_calls`；

@@ -168,8 +168,8 @@ flowchart LR
 | ClickHouse MCP Server | mcp/clickhouse | ReAct 链路工具提供方 | SSE :4200 |
 | Elasticsearch | 8.19 | 全文/日志数据源 | HTTP :9200（Search API） |
 | LLM 网关 | 任意 OpenAI 兼容端点 | 对话模型（temperature=0） | HTTPS |
-| Embedding 服务 | BGE 风格 | 向量化（维度运行时探测） | `POST /embedding/{model}` |
-| Rerank 服务 | SiliconFlow 风格 | 召回精排（top1） | `POST /reranker/{model}` |
+| Embedding 服务 | BGE 风格 | 向量化（维度运行时探测）；本地演示为 compose 内 Ollama bge-m3 + [deploy/embedadapter](../deploy/embedadapter) 协议适配层 | `POST /embedding/{model}` |
+| Rerank 服务 | SiliconFlow 风格 | 召回精排（top1）；本地演示为恒等实现（同上适配层） | `POST /reranker/{model}` |
 
 ## 7. 技术选型理由
 

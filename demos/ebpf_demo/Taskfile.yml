@@ -1,0 +1,82 @@
+# Taskfile 项目任务管理（https://taskfile.dev）
+# 使用前提：安装 task CLI（go install github.com/go-task/task/v3/cmd/task@latest）
+# 运行 `task` 或 `task --list` 查看全部任务
+version: "3"
+
+vars:
+  # 镜像名与标签（可通过命令行覆盖：task docker-build IMAGE=registry/ebpf-exporter TAG=v1.0）
+  IMAGE: ebpf-exporter
+  TAG: latest
+  PYTHON: python3
+  # 源码根（src 布局，运行时通过 PYTHONPATH 引入）
+  SRC_DIR: src
+
+tasks:
+  default:
+    desc: 显示任务列表（默认任务）
+    cmds:
+      - task --list
+
+  install:
+    desc: 安装 Python 依赖（bcc 需由系统包管理器安装，见 README）
+    cmds:
+      - "{{.PYTHON}} -m pip install -r requirements.txt"
+
+  check:
+    desc: 语法检查全部源码文件（不加载 BPF，无需 root）
+    cmds:
+      - "{{.PYTHON}} -m compileall -q {{.SRC_DIR}}"
+
+  run-tcp:
+    desc: 本地运行 TCP 连接监控（需要 root；完成后访问 http://localhost:9435/metrics）
+    cmds:
+      - sudo env PYTHONPATH={{.SRC_DIR}} {{.PYTHON}} -m ebpf_exporter tcp
+
+  run-dns:
+    desc: 本地运行 DNS 查询捕获（需要 root）
+    cmds:
+      - sudo env PYTHONPATH={{.SRC_DIR}} {{.PYTHON}} -m ebpf_exporter dns
+
+  docker-build:
+    desc: 构建 Docker 镜像
+    cmds:
+      - docker build -t {{.IMAGE}}:{{.TAG}} .
+
+  docker-run:
+    desc: 以特权容器运行 TCP 监控（eBPF 需要 privileged + 内核头文件挂载）
+    cmds:
+      - |
+        docker run -d --name ebpf-exporter --privileged --pid=host \
+          -v /lib/modules:/lib/modules:ro \
+          -v /etc/localtime:/etc/localtime:ro \
+          -v /usr/src/kernels:/usr/src/kernels:ro \
+          -v /sys/kernel/debug:/sys/kernel/debug:ro \
+          -p 9435:9435 \
+          {{.IMAGE}}:{{.TAG}} tcp
+
+  docker-debug:
+    desc: 进入调试容器的交互 shell（镜像内含 BCC 工具链）
+    cmds:
+      - |
+        docker run -it --rm --name ebpf-exporter-debug --privileged --pid=host \
+          -v /lib/modules:/lib/modules:ro \
+          -v /etc/localtime:/etc/localtime:ro \
+          -v /usr/src/kernels:/usr/src/kernels:ro \
+          -v /sys/kernel/debug:/sys/kernel/debug:ro \
+          {{.IMAGE}}:{{.TAG}} bash
+
+  docker-stop:
+    desc: 停止并删除运行中的容器
+    cmds:
+      - docker rm -f ebpf-exporter || true
+
+  deploy:
+    desc: 部署到 Kubernetes（DaemonSet，需先 docker-build 并推送镜像）
+    cmds:
+      - kubectl apply -f deploy/exporter.yaml
+
+  clean:
+    desc: 清理编译缓存与临时文件
+    cmds:
+      - find {{.SRC_DIR}} -type d -name __pycache__ -exec rm -rf {} +
+      - find {{.SRC_DIR}} -name "*.pyc" -delete

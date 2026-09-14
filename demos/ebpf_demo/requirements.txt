@@ -1,0 +1,6 @@
+# 纯 Python 依赖（pip 安装）
+# 注意：bcc 模块不由 pip 提供，需系统包安装（容器内见 Dockerfile，裸机见 README）：
+#   Ubuntu/Debian: sudo apt install bpfcc-tools python3-bpfcc
+Flask==2.2.2
+prometheus-client==0.14.1
+dnslib==0.9.23

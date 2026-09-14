@@ -1,0 +1,122 @@
+# Kubernetes 部署清单：DaemonSet（每节点一个实例）+ Service
+#
+# eBPF 容器的三个关键点：
+#   1. privileged + SYS_ADMIN：加载 BPF 程序需要特权
+#   2. hostPID: true          ：访问宿主机 /proc 获取进程名
+#   3. 内核目录挂载            ：BCC 运行时编译需要内核头文件与 BTF 信息
+#
+# 部署前：修改 spec.template.spec.containers[0].image 为你的镜像仓库地址，
+#         并确保 namespace 存在：kubectl create namespace monitoring
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ebpf-exporter
+  namespace: monitoring
+  labels:
+    app: ebpf-exporter
+spec:
+  selector:
+    matchLabels:
+      app: ebpf-exporter
+  template:
+    metadata:
+      labels:
+        app: ebpf-exporter
+    spec:
+      # 与宿主机共享 PID 命名空间：/proc/<pid>/comm 才能读到真实进程名
+      hostPID: true
+      hostNetwork: false
+      dnsPolicy: Default
+      containers:
+        - name: ebpf-exporter
+          securityContext:
+            # eBPF 程序加载必须特权模式
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
+          # TODO: 替换为实际镜像仓库地址，如 registry.example.com/infra/ebpf-exporter:1.0.0
+          image: ebpf-exporter:latest
+          resources:
+            limits:
+              cpu: 100m
+              memory: 1280Mi
+            requests:
+              cpu: 100m
+              memory: 1280Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 9435
+              scheme: HTTP
+          env:
+            # 过滤规则通过环境变量下发（见 config.py），示例：
+            # - name: FILTER_COMMAND_PREFIXES
+            #   value: "kube,containerd"
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: lib-modules
+              mountPath: /lib/modules
+              readOnly: true
+            - name: etc-localtime
+              mountPath: /etc/localtime
+              readOnly: true
+            # CentOS/RHEL 内核源码位置；Ubuntu 节点改为 /usr/src
+            - name: kernel-src
+              mountPath: /usr/src/kernels
+              readOnly: true
+            # BPF 文件系统挂载（BCC 加载程序时使用）
+            - name: kernel-debug
+              mountPath: /sys/kernel/debug
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9435
+              name: http-metrics
+      volumes:
+        - name: kernel-debug
+          hostPath:
+            path: /sys/kernel/debug
+        - name: kernel-src
+          hostPath:
+            path: /usr/src/kernels
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: etc-localtime
+          hostPath:
+            path: /etc/localtime
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # 标准 Prometheus 抓取注解（原版为公司内部平台的私有注解，已替换）
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: /metrics
+    prometheus.io/port: "9435"
+    prometheus.io/scheme: http
+  labels:
+    app: ebpf-exporter
+  name: ebpf-exporter
+  namespace: monitoring
+spec:
+  ports:
+    - name: http
+      port: 9435
+      protocol: TCP
+      targetPort: 9435
+  selector:
+    app: ebpf-exporter
+  type: ClusterIP

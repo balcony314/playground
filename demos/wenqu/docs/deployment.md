@@ -130,14 +130,19 @@ environment:
 
 `.env` 配置：`OPEN_ROUTER_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4`、`MODEL_NAME=glm-4.6`。
 
-### 6.3 无自研 Embedding/Rerank 服务的替代方案
+### 6.3 Embedding/Rerank 本地适配层（deploy/embedadapter + compose 内 Ollama）
 
-项目的 embedding（`POST /embedding/{model}`）与 rerank（`POST /reranker/{model}`）均为自研协议，公共云服务不直接提供。本地验证可用协议适配层桥接：
+项目的 embedding（`POST /embedding/{model}`）与 rerank（`POST /reranker/{model}`）均为自研协议，公共云服务不直接提供。本地演示已完全编排进 compose（`task deps:up` 一并拉起，无需宿主机预装任何模型服务）：
 
-- **embedding**：本机 [Ollama](https://ollama.com) 拉取 `bge-m3`（`ollama pull bge-m3`，1024 维，即项目默认模型），适配层把自研协议转 `POST /api/embed`；
-- **rerank**：演示语料仅 2 条 DDL / 2 条 mapping，向量粗排已覆盖全部候选，可用"恒等 rerank"（按输入顺序返回 top_n）替代；
-- 适配层参考实现：监听 `127.0.0.1:9999`，约百行 Go，`EMBEDDING_BASE_URL` / `RERANK_BASE_URL` 均指向它。
+- **Ollama 容器**（`ollama/ollama` 公共镜像）：embedding 模型运行时，CPU 推理即可；`ollama-pull` 初始化容器首次启动自动拉取 `bge-m3`（1024 维，约 1.2GB，幂等）；
+- **适配层容器**（[deploy/embedadapter](../deploy/embedadapter)，纯标准库 Go 独立 module，`golang` 公共镜像 `go run` 拉起）：
+  - embedding：自研协议 → Ollama `POST /api/embed`。bge-m3 为对称检索模型，`isQuestion` 字段仅透传，无需 query/document 指令前缀；
+  - rerank：恒等精排（按输入顺序返回 top_n）——演示语料仅 2 条 DDL / 2 条 mapping，向量粗排已覆盖全部候选；
+  - 就绪探测：`GET :9999/healthz` 校验 Ollama 存活 **且模型已拉取**，`deps:wait` 依赖它（模型下载期间不会误报就绪）。
 
+`.env` 保持 `EMBEDDING_BASE_URL` / `RERANK_BASE_URL` 指向 `http://127.0.0.1:9999` 即可。
+
+> 内存提示：Ollama 容器 + bge-m3 常驻约 2G；宿主机若另跑了 Ollama 服务且不再需要，可 `systemctl stop ollama` 释放（容器不依赖宿主机实例）。
 > 智谱 `embedding-3` 不在 Coding Plan 套餐内（报 1113），勿用套餐 key 调它。
 
 ### 6.4 推理型模型流式断流（已修复，选型注意）

@@ -1,5 +1,6 @@
 # 多数据源智能查询 Agent 平台 —— 依赖环境一键编排。
-# 全部使用公共镜像：Milvus（含 etcd/minio 依赖）、ClickHouse、Elasticsearch、ClickHouse MCP server。
+# 全部使用公共镜像：Milvus（含 etcd/minio 依赖）、ClickHouse、Elasticsearch、ClickHouse MCP server、
+# Ollama（embedding 模型运行时，首次启动自动拉取 bge-m3）+ Embedding/Rerank 协议适配层。
 # 用法：cp .env.example .env && docker compose -f deploy/compose.yml up -d
 name: datasearch-demo
 
@@ -126,9 +127,61 @@ services:
       start_period: 60s
     restart: on-failure
 
+  # ---- Ollama：embedding 模型运行时（bge-m3，CPU 推理即可）----
+  # 不映射 11434 到宿主，避免与宿主机已有 Ollama 端口冲突；仅供 compose 网络内访问
+  ollama:
+    image: ollama/ollama:0.30.10
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: on-failure
+
+  # ---- 首次启动拉取 bge-m3（幂等：模型已在卷中则秒过，约 1.2GB 一次性下载）----
+  ollama-pull:
+    image: ollama/ollama:0.30.10
+    entrypoint: ["ollama", "pull", "bge-m3"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # ---- Embedding/Rerank 协议适配层（:9999）：自研协议 → Ollama，rerank 恒等 ----
+  # 零依赖独立 module，直接用 golang 公共镜像 go run 拉起；
+  # healthz 校验 Ollama 存活 + bge-m3 已拉取（deps:wait 依赖它，模型下载期间不误报就绪）
+  embedadapter:
+    image: golang:1.25-alpine
+    working_dir: /src
+    command: ["go", "run", "."]
+    environment:
+      ADAPTER_LISTEN: ":9999"
+      OLLAMA_HOST: http://ollama:11434
+      EMBED_MODEL: bge-m3
+    volumes:
+      - ./embedadapter:/src
+    ports:
+      - "9999:9999"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9999/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: on-failure
+
 volumes:
   etcd_data:
   minio_data:
   milvus_data:
   clickhouse_data:
   es_data:
+  ollama_data:
