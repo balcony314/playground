@@ -1,6 +1,7 @@
 # 多数据源智能查询 Agent 平台 —— 依赖环境一键编排。
 # 全部使用公共镜像：Milvus（含 etcd/minio 依赖）、ClickHouse、Elasticsearch、ClickHouse MCP server、
-# Ollama（embedding 模型运行时，首次启动自动拉取 bge-m3）+ Embedding/Rerank 协议适配层。
+# Ollama（embedding 模型运行时，首次启动自动拉取 bge-m3）、llama.cpp（rerank 模型运行时，
+# 首次启动自动下载 bge-reranker-v2-m3）+ Embedding/Rerank 协议适配层。
 # 用法：cp .env.example .env && docker compose -f deploy/compose.yml up -d
 name: datasearch-demo
 
@@ -152,30 +153,68 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # ---- Embedding/Rerank 协议适配层（:9999）：自研协议 → Ollama，rerank 恒等 ----
-  # 零依赖独立 module，直接用 golang 公共镜像 go run 拉起；
-  # healthz 校验 Ollama 存活 + bge-m3 已拉取（deps:wait 依赖它，模型下载期间不误报就绪）
+  # ---- Reranker：llama.cpp server + bge-reranker-v2-m3（真精排，cross-encoder，CPU 可跑）----
+  # llama.cpp 以 --reranking 启动后提供 OpenAI 风格 POST /v1/rerank 端点；
+  # 等 reranker-pull 把 GGUF 下载完才启动（下载期间启动会因缺文件退出）；
+  # 不映射宿主端口，仅供 compose 网络内 embedadapter 访问
+  reranker:
+    image: ghcr.io/ggml-org/llama.cpp:server-b4738
+    command: ["-m", "/models/bge-reranker-v2-m3-Q8_0.gguf", "--host", "0.0.0.0", "--port", "8080", "--reranking"]
+    volumes:
+      - rerank_models:/models
+    mem_limit: 1g
+    depends_on:
+      reranker-pull:
+        condition: service_completed_successfully
+    restart: on-failure
+
+  # ---- 首次启动下载 bge-reranker-v2-m3 GGUF（Q8_0 约 600MB，幂等：已完整则跳过）----
+  # 走 hf-mirror.com 国内镜像；curlimages/curl 为公共镜像（alpine 基底，带 sh）
+  reranker-pull:
+    image: curlimages/curl:8.11.1
+    # 镜像默认以非 root 的 curl 用户运行，写不进 root 属主的命名卷，显式切 root
+    user: "0:0"
+    entrypoint: ["sh", "-c",
+      "[ \"$(stat -c%s /models/bge-reranker-v2-m3-Q8_0.gguf 2>/dev/null || echo 0)\" -gt 600000000 ] && echo 'rerank model exists, skip' || curl -Lf --retry 5 -o /models/bge-reranker-v2-m3-Q8_0.gguf https://hf-mirror.com/gpustack/bge-reranker-v2-m3-GGUF/resolve/main/bge-reranker-v2-m3-Q8_0.gguf"]
+    volumes:
+      - rerank_models:/models
+    restart: "no"
+
+  # ---- Embedding/Rerank 协议适配层（:9999）：自研协议 → Ollama / llama.cpp ----
+  # 主 module 入口 cmd/embedadapter（gin），golang 公共镜像挂载最小源集 go run 拉起；
+  # GOPROXY 走国内镜像拉 gin 依赖，gomod_cache/gocache 卷持久化避免重复下载；
+  # healthz 校验 Ollama 存活 + bge-m3 已拉取（deps:wait 依赖它，模型下载期间不误报就绪）；
+  # RERANK_URL 非空时 rerank 转发 llama.cpp 真精排，后端异常自动降级恒等
   embedadapter:
     image: golang:1.25-alpine
-    working_dir: /src
-    command: ["go", "run", "."]
+    working_dir: /app
+    command: ["go", "run", "./cmd/embedadapter"]
     environment:
       ADAPTER_LISTEN: ":9999"
       OLLAMA_HOST: http://ollama:11434
       EMBED_MODEL: bge-m3
+      RERANK_URL: http://reranker:8080/v1/rerank
+      GOPROXY: https://goproxy.cn,direct
     volumes:
-      - ./embedadapter:/src
+      - ../go.mod:/app/go.mod:ro
+      - ../go.sum:/app/go.sum:ro
+      - ../cmd/embedadapter:/app/cmd/embedadapter:ro
+      - gomod_cache:/go/pkg/mod
+      - gocache:/root/.cache/go-build
     ports:
       - "9999:9999"
     depends_on:
       ollama:
         condition: service_healthy
+      # 弱依赖：reranker 未就绪时适配层仍可启动（rerank 自动降级恒等）
+      reranker:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9999/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     restart: on-failure
 
 volumes:
@@ -185,3 +224,6 @@ volumes:
   clickhouse_data:
   es_data:
   ollama_data:
+  rerank_models:
+  gomod_cache:
+  gocache:

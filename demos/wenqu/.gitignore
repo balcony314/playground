@@ -1,6 +1,7 @@
 # 二进制
 bin/
 *.exe
+embedadapter
 
 # 本地环境配置（含凭证）
 .env

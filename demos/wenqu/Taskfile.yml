@@ -41,6 +41,7 @@ tasks:
         done
         echo "等待超时，请用 task deps:ps 检查容器状态" >&2
         echo "首次启动需下载 bge-m3（约 1.2GB），进度可看：docker compose -f deploy/compose.yml logs ollama-pull" >&2
+        echo "reranker 模型（约 600MB）后台下载，不阻塞本等待：docker compose -f deploy/compose.yml logs reranker-pull" >&2
         exit 1
 
   deps:ps:

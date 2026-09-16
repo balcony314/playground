@@ -33,7 +33,7 @@ cp .env.example .env          # 按需修改凭证
 task deps:up                  # 或：docker compose -f deploy/compose.yml up -d
 ```
 
-六服务（全公共镜像，首次拉取约 3GB）：
+九组服务（全公共镜像，首次拉取镜像约 3GB + 模型约 1.8GB）：
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
@@ -42,6 +42,9 @@ task deps:up                  # 或：docker compose -f deploy/compose.yml up -d
 | clickhouse | 8123(HTTP) / 9000(native) | 结构化数据源（账号取 `.env` 的 `CLICKHOUSE_USERNAME/PASSWORD`，默认 default/clickhouse） |
 | mcp-clickhouse | 4200 | ClickHouse MCP Server（**SSE transport**，须配 `CLICKHOUSE_MCP_SERVER_TRANSPORT=sse`、`CLICKHOUSE_MCP_BIND_HOST=0.0.0.0`、`CLICKHOUSE_SECURE=false`，compose.yml 已内置） |
 | elasticsearch | 9200 | 全文/日志数据源（security 已关闭） |
+| ollama（+ollama-pull） | — | embedding 运行时，首次启动自动拉取 bge-m3（§6.3） |
+| reranker（+reranker-pull） | — | rerank 运行时（llama.cpp），首次启动自动下载 bge-reranker-v2-m3（§6.3） |
+| embedadapter | 9999 | 自研 Embedding/Rerank 协议适配层（§6.3） |
 
 验证就绪（六服务 healthy）：
 
@@ -130,19 +133,20 @@ environment:
 
 `.env` 配置：`OPEN_ROUTER_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4`、`MODEL_NAME=glm-4.6`。
 
-### 6.3 Embedding/Rerank 本地适配层（deploy/embedadapter + compose 内 Ollama）
+### 6.3 Embedding/Rerank 本地适配层（cmd/embedadapter + compose 内 Ollama/llama.cpp）
 
 项目的 embedding（`POST /embedding/{model}`）与 rerank（`POST /reranker/{model}`）均为自研协议，公共云服务不直接提供。本地演示已完全编排进 compose（`task deps:up` 一并拉起，无需宿主机预装任何模型服务）：
 
 - **Ollama 容器**（`ollama/ollama` 公共镜像）：embedding 模型运行时，CPU 推理即可；`ollama-pull` 初始化容器首次启动自动拉取 `bge-m3`（1024 维，约 1.2GB，幂等）；
-- **适配层容器**（[deploy/embedadapter](../deploy/embedadapter)，纯标准库 Go 独立 module，`golang` 公共镜像 `go run` 拉起）：
+- **llama.cpp 容器**（`ghcr.io/ggml-org/llama.cpp:server` 公共镜像）：rerank 模型运行时，`--reranking` 模式提供 OpenAI 风格 `POST /v1/rerank`；`reranker-pull` 初始化容器首次启动自动下载 `bge-reranker-v2-m3` GGUF（Q8_0 约 600MB，幂等，走 hf-mirror 国内镜像）；
+- **适配层容器**（[cmd/embedadapter](../cmd/embedadapter)，gin，主 module 进程入口，`golang` 公共镜像 `go run` 拉起）：
   - embedding：自研协议 → Ollama `POST /api/embed`。bge-m3 为对称检索模型，`isQuestion` 字段仅透传，无需 query/document 指令前缀；
-  - rerank：恒等精排（按输入顺序返回 top_n）——演示语料仅 2 条 DDL / 2 条 mapping，向量粗排已覆盖全部候选；
+  - rerank：自研协议 → llama.cpp `POST /v1/rerank` 真精排（cross-encoder 逐对计算 query×document 相关度，按分数降序返回）。`RERANK_URL` 未配置或后端异常时自动降级为恒等（按输入顺序），日志打 `rerank backend failed, fallback to identity` 留痕；
   - 就绪探测：`GET :9999/healthz` 校验 Ollama 存活 **且模型已拉取**，`deps:wait` 依赖它（模型下载期间不会误报就绪）。
 
 `.env` 保持 `EMBEDDING_BASE_URL` / `RERANK_BASE_URL` 指向 `http://127.0.0.1:9999` 即可。
 
-> 内存提示：Ollama 容器 + bge-m3 常驻约 2G；宿主机若另跑了 Ollama 服务且不再需要，可 `systemctl stop ollama` 释放（容器不依赖宿主机实例）。
+> 内存提示：Ollama（bge-m3）+ llama.cpp（bge-reranker-v2-m3）常驻合计约 2.5~3G；宿主机若另跑了 Ollama 服务且不再需要，可 `systemctl stop ollama` 释放（容器不依赖宿主机实例）。
 > 智谱 `embedding-3` 不在 Coding Plan 套餐内（报 1113），勿用套餐 key 调它。
 
 ### 6.4 推理型模型流式断流（已修复，选型注意）
