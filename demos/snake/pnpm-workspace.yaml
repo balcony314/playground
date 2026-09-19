@@ -1,0 +1,11 @@
+# pnpm 配置:允许运行 esbuild 与 electron 的安装脚本(下载平台二进制)
+allowBuilds:
+  esbuild: true
+  electron: true
+  # electron-builder 的可选依赖(Squirrel 格式,本项目不用),显式忽略以免构建告警
+  electron-winstaller: false
+
+overrides:
+  # app-builder-lib 声明 ^3.0.0 但实际使用了 3.1+ 的 API(ElectronDownloadCacheMode),
+  # pnpm 会复用 electron 依赖链中的 3.0.0 导致打包崩溃,强制解析到 3.1.0
+  "app-builder-lib>@electron/get": "3.1.0"

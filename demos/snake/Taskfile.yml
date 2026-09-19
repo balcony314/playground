@@ -1,0 +1,67 @@
+# Taskfile 任务入口:https://taskfile.dev
+# 跨 Windows / Linux;需先安装 task 与 pnpm
+version: '3'
+
+env:
+  # Electron 与 electron-builder 二进制下载镜像(直连 GitHub 易超时),可用环境变量覆盖
+  ELECTRON_MIRROR: '{{.ELECTRON_MIRROR | default "https://npmmirror.com/mirrors/electron/"}}'
+  ELECTRON_BUILDER_BINARIES_MIRROR: '{{.ELECTRON_BUILDER_BINARIES_MIRROR | default "https://npmmirror.com/mirrors/electron-builder-binaries/"}}'
+
+tasks:
+  default:
+    desc: 列出所有任务
+    silent: true
+    cmds:
+      - task --list
+
+  install:
+    desc: 安装依赖
+    cmds:
+      - pnpm install
+
+  dev:
+    desc: 开发模式(electron-vite 热更新)
+    cmds:
+      - pnpm dev
+
+  build:
+    desc: 构建生产产物(out/)
+    cmds:
+      - pnpm build
+
+  test:
+    desc: 运行 Vitest 单元测试
+    cmds:
+      - pnpm test
+
+  typecheck:
+    desc: 主进程 + 渲染进程 TypeScript 类型检查
+    cmds:
+      - pnpm typecheck
+
+  clean:
+    desc: 清理构建产物(out/、dist/)
+    cmds:
+      - cmd: rm -rf out dist
+        platforms: [linux, darwin]
+      - cmd: powershell -Command "Remove-Item -Recurse -Force out, dist -ErrorAction SilentlyContinue"
+        platforms: [windows]
+
+  package:linux:
+    desc: 打包 Linux 安装包(AppImage + deb)
+    deps: [build]
+    cmds:
+      - pnpm exec electron-builder --linux --publish never
+
+  package:win:
+    desc: 打包 Windows 安装包(NSIS + portable)
+    deps: [build]
+    cmds:
+      # 在 Linux 上交叉打包需安装 wine;推荐在 Windows 机器上原生打包
+      - pnpm exec electron-builder --win --publish never
+
+  package:all:
+    desc: 打包当前平台所有目标(配置见 electron-builder.yml)
+    deps: [build]
+    cmds:
+      - pnpm exec electron-builder --publish never

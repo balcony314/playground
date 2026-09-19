@@ -1,0 +1,37 @@
+# electron-builder 打包配置
+# 产物输出到 dist/,构建前需先运行 pnpm build 生成 out/
+appId: com.balcony314.snake
+productName: Snake
+directories:
+  output: dist
+# 主进程无外部运行时依赖,asar 仅需打包 electron-vite 产物
+# (package.json 会被自动包含,main 字段指向 out/main/index.js)
+files:
+  - out/**
+asar: true
+# normal 即可显著减小体积,maximum 对 100MB+ 的 Electron 二进制做 xz 极慢
+compression: normal
+win:
+  # 产物名避免中文,保证跨平台文件系统兼容
+  executableName: snake
+  target:
+    - nsis
+    - portable
+nsis:
+  artifactName: ${productName}-${version}-setup.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Game
+  maintainer: balcony314
+  # 使 .desktop 的 StartupWMClass 与窗口 desktopName 一致,正确关联任务栏图标
+  syncDesktopName: true
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext}

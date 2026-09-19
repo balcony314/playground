@@ -122,9 +122,7 @@ func (s *VectorStore) ensureDDLOrMappingCollection(ctx context.Context, collecti
 		WithField(entity.NewField().WithName(schemaField).WithDataType(entity.FieldTypeVarChar).WithMaxLength(schemaLen))
 
 	indexOption := milvusclient.NewCreateIndexOption(collectionName, vectorField, index.NewAutoIndex(entity.IP)).WithIndexName(vectorField)
-	if err := s.db.CreateCollection(ctx,
-		milvusclient.NewCreateCollectionOption(collectionName, schema).
-			WithIndexOptions(indexOption)); err != nil {
+	if err := s.db.CreateCollection(ctx, milvusclient.NewCreateCollectionOption(collectionName, schema).WithIndexOptions(indexOption)); err != nil {
 		return fmt.Errorf("create collection: %w", err)
 	}
 	slog.InfoContext(ctx, "created ddl/mapping collection", slog.String("collection", collectionName))
