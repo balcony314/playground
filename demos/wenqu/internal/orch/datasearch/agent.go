@@ -27,7 +27,9 @@ type Agent struct {
 }
 
 // NewAgent 创建 datasearch 编排 agent。不做重初始化 IO（图在每次查询时构建），仅持有依赖
-func NewAgent(chatModel model.ToolCallingChatModel, vectorStore *store.VectorStore, ch *db.ClickHouseClient, esCli *elasticsearch.TypedClient, maxRetry int) *Agent {
+func NewAgent(chatModel model.ToolCallingChatModel, vectorStore *store.VectorStore,
+	ch *db.ClickHouseClient, esCli *elasticsearch.TypedClient, maxRetry int) *Agent {
+
 	return &Agent{
 		chatModel:   chatModel,
 		vectorStore: vectorStore,

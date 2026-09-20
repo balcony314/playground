@@ -30,7 +30,8 @@ type DBSearchService struct {
 //   - vectorStore：Milvus 向量库，用于多源查询的 RAG 召回；
 //   - ch/esCli：真实执行查询的客户端；
 //   - maxRetry：多源链路每个数据源的自愈重试上限。
-func NewDBSearchService(ctx context.Context, defaultChatModel model.ToolCallingChatModel, mcpClickhouseTools []tool.BaseTool, vectorStore *store.VectorStore, ch *db.ClickHouseClient, esCli *elasticsearch.TypedClient, maxRetry int) (*DBSearchService, error) {
+func NewDBSearchService(ctx context.Context, defaultChatModel model.ToolCallingChatModel, mcpClickhouseTools []tool.BaseTool,
+	vectorStore *store.VectorStore, ch *db.ClickHouseClient, esCli *elasticsearch.TypedClient, maxRetry int) (*DBSearchService, error) {
 	ckSearchAgent, err := clickhouse.NewAgent(ctx, defaultChatModel, mcpClickhouseTools)
 	if err != nil {
 		return nil, fmt.Errorf("new clickhouse agent: %w", err)

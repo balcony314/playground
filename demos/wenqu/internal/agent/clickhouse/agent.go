@@ -29,7 +29,9 @@ type Agent struct {
 // chatModel：底层对话模型（经 OpenRouter 调用）；
 // mcpClickhouseTools：ClickHouse MCP server 暴露的工具列表（已在加载侧
 // 按工具名白名单收窄），agent 执行期可自主决定调用顺序与次数。
-func NewAgent(ctx context.Context, chatModel model.ToolCallingChatModel, mcpClickhouseTools []tool.BaseTool) (*Agent, error) {
+func NewAgent(ctx context.Context, chatModel model.ToolCallingChatModel,
+	mcpClickhouseTools []tool.BaseTool) (*Agent, error) {
+
 	if len(mcpClickhouseTools) == 0 {
 		return nil, fmt.Errorf("no mcp clickhouse tools provided, check mcp server and tool whitelist")
 	}
