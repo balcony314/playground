@@ -74,8 +74,7 @@ func (a *Agent) DataSearch(ctx context.Context, question string) (string, error)
 		return "", fmt.Errorf("graph builder: %w", err)
 	}
 
-	report, err := r.Invoke(ctx, graph.InputProcess,
-		compose.WithCallbacks(&callback.LoggerCallback{ParentCtx: ctx}))
+	report, err := r.Invoke(ctx, graph.InputProcess, compose.WithCallbacks(&callback.LoggerCallback{ParentCtx: ctx}))
 	if err != nil {
 		return "", fmt.Errorf("graph invoke: %w", err)
 	}

@@ -25,11 +25,13 @@ func NewInputProcess(ctx context.Context, chatModel model.ToolCallingChatModel) 
 		{"load", compose.InvokableLambdaWithOption(loadInputProcessMSG)},
 		{"router", compose.InvokableLambdaWithOption(routerInputProcess)},
 	}
+
 	for _, node := range nodes {
 		if err := cag.AddLambdaNode(node.name, node.lam); err != nil {
 			return nil, fmt.Errorf("add %s lambda node: %w", node.name, err)
 		}
 	}
+
 	if err := cag.AddChatModelNode("agent", chatModel); err != nil {
 		return nil, fmt.Errorf("add agent model node: %w", err)
 	}
@@ -40,6 +42,7 @@ func NewInputProcess(ctx context.Context, chatModel model.ToolCallingChatModel) 
 		{"agent", "router"},
 		{"router", compose.END},
 	}
+
 	for _, edge := range edges {
 		if err := cag.AddEdge(edge.from, edge.to); err != nil {
 			return nil, fmt.Errorf("add %s→%s edge: %w", edge.from, edge.to, err)
@@ -96,8 +99,8 @@ func routerInputProcess(ctx context.Context, input *schema.Message, opts ...any)
 		state.Mapping = recall(ctx, "mapping", state.MappingGenWithRerankFunc, state.Question)
 		state.SQL = recall(ctx, "sql", state.SQLGenFunc, state.Question)
 		state.DSL = recall(ctx, "dsl", state.DSLGenFunc, state.Question)
-		slog.InfoContext(ctx, "rag recall done",
-			slog.String("question", state.Question),
+
+		slog.InfoContext(ctx, "rag recall done", slog.String("question", state.Question),
 			slog.Int("ddl_len", len(state.DDL)),
 			slog.Int("mapping_len", len(state.Mapping)),
 			slog.Int("sql_len", len(state.SQL)),
@@ -120,10 +123,10 @@ func recall(ctx context.Context, channel string, fn func(ctx context.Context, qu
 
 	result, err := fn(ctx, question)
 	if err != nil {
-		slog.WarnContext(ctx, "rag recall degraded, continue with empty context",
-			slog.String("channel", channel), slog.Any("error", err))
+		slog.WarnContext(ctx, "rag recall degraded, continue with empty context", slog.String("channel", channel), slog.Any("error", err))
 		return ""
 	}
+
 	if len(result) == 0 {
 		return ""
 	}

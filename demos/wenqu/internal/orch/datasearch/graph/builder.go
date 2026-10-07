@@ -102,6 +102,7 @@ func agentHandOff(ctx context.Context, input string) (next string, err error) {
 	defer func() {
 		slog.DebugContext(ctx, "agentHandOff", slog.String("input", input), slog.String("next", next))
 	}()
+
 	_ = compose.ProcessState[*State](ctx, func(_ context.Context, state *State) error {
 		next = state.Goto
 		return nil
@@ -115,7 +116,10 @@ func agentHandOff(ctx context.Context, input string) (next string, err error) {
 //
 // genFunc：每次请求生成初始 State 的函数（见 orch/datasearch/agent.go）；
 // chatModel：所有 LLM 节点共用的对话模型。
-func Builder(ctx context.Context, genFunc compose.GenLocalState[*State], chatModel model.ToolCallingChatModel) (compose.Runnable[string, string], error) {
+func Builder(ctx context.Context,
+	genFunc compose.GenLocalState[*State],
+	chatModel model.ToolCallingChatModel) (compose.Runnable[string, string], error) {
+
 	// 状态由函数惰性创建而非图构建时固定
 	g := compose.NewGraph[string, string](
 		compose.WithGenLocalState(genFunc),
@@ -133,18 +137,22 @@ func Builder(ctx context.Context, genFunc compose.GenLocalState[*State], chatMod
 	if err != nil {
 		return nil, fmt.Errorf("new input process: %w", err)
 	}
+
 	plannerGraph, err := NewPlanner(ctx, chatModel)
 	if err != nil {
 		return nil, fmt.Errorf("new planner: %w", err)
 	}
+
 	searchTeamGraph, err := NewSearchTeam(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("new search team: %w", err)
 	}
+
 	clickhouseSearcherGraph, err := NewClickhouseSearcher(ctx, chatModel)
 	if err != nil {
 		return nil, fmt.Errorf("new clickhouse searcher: %w", err)
 	}
+
 	elasticSearchSearcherGraph, err := NewElasticSearchSearcher(ctx, chatModel)
 	if err != nil {
 		return nil, fmt.Errorf("new elasticsearch searcher: %w", err)
@@ -177,6 +185,7 @@ func Builder(ctx context.Context, genFunc compose.GenLocalState[*State], chatMod
 		{InputProcess, Planner},
 		{Planner, SearchTeam},
 	}
+
 	for _, edge := range edges {
 		if err := g.AddEdge(edge.from, edge.to); err != nil {
 			return nil, fmt.Errorf("add edge %s→%s: %w", edge.from, edge.to, err)
@@ -187,6 +196,7 @@ func Builder(ctx context.Context, genFunc compose.GenLocalState[*State], chatMod
 	if err := g.AddBranch(SearchTeam, compose.NewGraphBranch(agentHandOff, outMap)); err != nil {
 		return nil, fmt.Errorf("add search team branch: %w", err)
 	}
+
 	// 两个搜索子图执行完固定回到 SearchTeam，形成"调度 → 搜索 → 再调度"的循环，
 	// 直到所有数据源都在 RespMap 中有结果（由 search_team 的 router 判定后 Goto=OutputSummary）
 	for _, searcher := range searcherNodes {
@@ -194,6 +204,7 @@ func Builder(ctx context.Context, genFunc compose.GenLocalState[*State], chatMod
 			return nil, fmt.Errorf("add %s→search_team edge: %w", searcher, err)
 		}
 	}
+
 	if err := g.AddEdge(OutputSummary, compose.END); err != nil {
 		return nil, fmt.Errorf("add output summary edge: %w", err)
 	}
